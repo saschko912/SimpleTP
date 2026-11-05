@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "simpletp_permissions",
+  "version": "${version}",
+  "name": "SimpleTP Permissions",
+  "description": "Self-only teleport command for all whitelisted server players.",
+  "environment": "server",
+  "entrypoints": {"main": ["de.simpletp.SimpleTP"]},
+  "depends": {"fabricloader": ">=0.20.1", "minecraft": "26.3", "fabric-api": "*"}
+}
