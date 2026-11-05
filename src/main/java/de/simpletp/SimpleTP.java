@@ -1,46 +1,70 @@
 package de.simpletp;
 
+import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
+import com.mojang.brigadier.tree.CommandNode;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.command.argument.EntityArgumentType;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.Vec3d;
-import static net.minecraft.server.command.CommandManager.argument;
-import static net.minecraft.server.command.CommandManager.literal;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.server.level.ServerPlayer;
 
+import java.lang.reflect.Field;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Experimental 26.3 port. NOT security-tested.
+ * Replaces vanilla /tp and /teleport, including for operators.
+ */
 public class SimpleTP implements ModInitializer {
     @Override
     public void onInitialize() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            // Register the same root names as vanilla, with safe self-only routes.
-            // A command registration callback may merge nodes with vanilla.
+            // Fail closed: if vanilla roots cannot be removed, do not register
+            // an unsafe merged /tp command.
+            try {
+                removeRoot(dispatcher, "tp");
+                removeRoot(dispatcher, "teleport");
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("Cannot safely replace vanilla teleport commands", e);
+            }
+
             for (String name : new String[]{"tp", "teleport"}) {
-                dispatcher.register(literal(name)
-                    .then(argument("destination", EntityArgumentType.player())
+                dispatcher.register(Commands.literal(name)
+                    .requires(source -> source.getEntity() instanceof ServerPlayer)
+                    .then(Commands.argument("destination", EntityArgument.player())
                         .executes(ctx -> {
-                            ServerPlayerEntity self = ctx.getSource().getPlayerOrThrow();
-                            ServerPlayerEntity target = EntityArgumentType.getPlayer(ctx, "destination");
-                            self.teleport((ServerWorld) target.getWorld(), target.getX(), target.getY(), target.getZ(),
-                                java.util.Collections.emptySet(), self.getYaw(), self.getPitch(), false);
+                            ServerPlayer self = ctx.getSource().getPlayerOrException();
+                            ServerPlayer target = EntityArgument.getPlayer(ctx, "destination");
+                            self.teleportTo(target.serverLevel(), target.getX(), target.getY(), target.getZ(),
+                                Set.of(), self.getYRot(), self.getXRot(), false);
                             return 1;
                         }))
-                    .then(argument("x", DoubleArgumentType.doubleArg())
-                        .then(argument("y", DoubleArgumentType.doubleArg())
-                            .then(argument("z", DoubleArgumentType.doubleArg())
+                    .then(Commands.argument("x", DoubleArgumentType.doubleArg())
+                        .then(Commands.argument("y", DoubleArgumentType.doubleArg())
+                            .then(Commands.argument("z", DoubleArgumentType.doubleArg())
                                 .executes(ctx -> {
-                                    ServerPlayerEntity self = ctx.getSource().getPlayerOrThrow();
-                                    double x = DoubleArgumentType.getDouble(ctx, "x");
-                                    double y = DoubleArgumentType.getDouble(ctx, "y");
-                                    double z = DoubleArgumentType.getDouble(ctx, "z");
-                                    self.teleport((ServerWorld) self.getWorld(), x, y, z,
-                                        java.util.Collections.emptySet(), self.getYaw(), self.getPitch(), false);
+                                    ServerPlayer self = ctx.getSource().getPlayerOrException();
+                                    self.teleportTo(
+                                        DoubleArgumentType.getDouble(ctx, "x"),
+                                        DoubleArgumentType.getDouble(ctx, "y"),
+                                        DoubleArgumentType.getDouble(ctx, "z"));
                                     return 1;
                                 })))));
             }
         });
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void removeRoot(CommandDispatcher<CommandSourceStack> dispatcher, String name)
+            throws ReflectiveOperationException {
+        CommandNode<CommandSourceStack> root = dispatcher.getRoot();
+        for (String fieldName : new String[]{"children", "literals", "arguments"}) {
+            Field field = CommandNode.class.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            ((Map<String, ?>) field.get(root)).remove(name);
+        }
     }
 }
