@@ -38,7 +38,7 @@ public class SimpleTP implements ModInitializer {
                         .executes(ctx -> {
                             ServerPlayer self = ctx.getSource().getPlayerOrException();
                             ServerPlayer target = EntityArgument.getPlayer(ctx, "destination");
-                            self.teleportTo(target.serverLevel(), target.getX(), target.getY(), target.getZ(),
+     self.teleportTo((net.minecraft.server.level.ServerLevel) target.level(), target.getX(), target.getY(), target.getZ(),
                                 Set.of(), self.getYRot(), self.getXRot(), false);
                             return 1;
                         }))
